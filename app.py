@@ -1,20 +1,19 @@
 from flask import Flask, jsonify, request
 import pandas as pd
+import os
 
 app = Flask(__name__)
 
-# Load your CSV
+# Load CSV
 df = pd.read_csv("stock_data.csv")
 
 @app.route('/stock', methods=['GET'])
 def get_stock():
-    # Get query parameters from the URL
     owner = request.args.get('owner', '').strip().lower()
     product = request.args.get('product', '').strip().lower()
 
     filtered_df = df.copy()
 
-    # Apply filters if provided
     if owner:
         filtered_df = filtered_df[
             filtered_df['OWNER'].str.lower().str.contains(owner, na=False)
@@ -29,4 +28,6 @@ def get_stock():
     return jsonify(filtered_df.to_dict(orient='records'))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000)
+    # Get the port from the environment (Render sets this)
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
