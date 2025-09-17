@@ -1,42 +1,86 @@
 from flask import Flask, jsonify, request
 import pandas as pd
-import os
 
 app = Flask(__name__)
 
-# Load CSV
-df = pd.read_csv("stock_data.csv")
+# Load your CSV directly
+try:
+    df = pd.read_csv("stock_data.csv")
 
-@app.route('/stock', methods=['GET'])
+    # Normalize headers (strip + uppercase)
+    df.columns = [c.strip().upper() for c in df.columns]
+
+    # Ensure correct types
+    for col in ["OWNER", "PRODUCT_CODE", "MASTER_CODE"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+
+    for col in ["STOCK", "FREE_STOCK"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    load_error = None
+except Exception as e:
+    df = None
+    load_error = str(e)
+
+@app.route("/", methods=["GET"])
+def root():
+    return jsonify({"ok": True, "message": "Use /stock or /health"}), 200
+
+@app.route("/health", methods=["GET"])
+def health():
+    if load_error:
+        return jsonify({"ok": False, "error": load_error}), 500
+    return jsonify({
+        "ok": True,
+        "rows": 0 if df is None else len(df),
+        "columns": [] if df is None else list(df.columns)
+    }), 200
+
+@app.route("/stock", methods=["GET"])
 def get_stock():
+    if load_error:
+        return jsonify({"error": "CSV load error", "details": load_error}), 500
+    if df is None:
+        return jsonify({"error": "CSV not loaded"}), 500
+
+    # Query parameters
+    owner = (request.args.get("owner") or "").strip().lower()
+    product = (request.args.get("product") or "").strip().lower()
+
+    # Optional pagination
     try:
-        owner = request.args.get('owner', '').strip().lower()
-        product = request.args.get('product', '').strip().lower()
+        limit = int(request.args.get("limit", "0"))
+        offset = int(request.args.get("offset", "0"))
+    except ValueError:
+        return jsonify({"error": "limit/offset must be integers"}), 400
 
-        print(f"Filtering by owner: '{owner}', product: '{product}'")  # DEBUG
+    filtered = df
 
-        filtered_df = df.copy()
+    if "OWNER" in df.columns and owner:
+        filtered = filtered[filtered["OWNER"].str.lower().str.contains(owner, na=False)]
 
-        if owner:
-            filtered_df = filtered_df[
-                filtered_df['OWNER'].str.lower().str.contains(owner, na=False)
-            ]
+    if product and "PRODUCT_CODE" in df.columns and "MASTER_CODE" in df.columns:
+        m1 = filtered["PRODUCT_CODE"].str.lower().str.contains(product, na=False)
+        m2 = filtered["MASTER_CODE"].str.lower().str.contains(product, na=False)
+        filtered = filtered[m1 | m2]
 
-        if product:
-            filtered_df = filtered_df[
-                filtered_df['PRODUCT_CODE'].str.lower().str.contains(product, na=False) |
-                filtered_df['MASTER_CODE'].str.lower().str.contains(product, na=False)
-            ]
+    total = len(filtered)
+    if offset > 0:
+        filtered = filtered.iloc[offset:]
+    if limit > 0:
+        filtered = filtered.iloc[:limit]
 
-        print(f"Filtered rows: {len(filtered_df)}")  # DEBUG
+    return jsonify({
+        "ok": True,
+        "total": total,
+        "returned": len(filtered),
+        "offset": offset,
+        "limit": limit,
+        "rows": filtered.to_dict(orient="records")
+    }), 200
 
-        return jsonify(filtered_df.to_dict(orient='records'))
-
-    except Exception as e:
-        print(f"❌ ERROR: {e}")  # Log error to Render console
-        return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
-
-if __name__ == '__main__':
-    # Get the port from the environment (Render sets this)
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+# Local dev only
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000, debug=True)
