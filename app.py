@@ -9,23 +9,32 @@ df = pd.read_csv("stock_data.csv")
 
 @app.route('/stock', methods=['GET'])
 def get_stock():
-    owner = request.args.get('owner', '').strip().lower()
-    product = request.args.get('product', '').strip().lower()
+    try:
+        owner = request.args.get('owner', '').strip().lower()
+        product = request.args.get('product', '').strip().lower()
 
-    filtered_df = df.copy()
+        print(f"Filtering by owner: '{owner}', product: '{product}'")  # DEBUG
 
-    if owner:
-        filtered_df = filtered_df[
-            filtered_df['OWNER'].str.lower().str.contains(owner, na=False)
-        ]
+        filtered_df = df.copy()
 
-    if product:
-        filtered_df = filtered_df[
-            filtered_df['PRODUCT_CODE'].str.lower().str.contains(product, na=False) |
-            filtered_df['MASTER_CODE'].str.lower().str.contains(product, na=False)
-        ]
+        if owner:
+            filtered_df = filtered_df[
+                filtered_df['OWNER'].str.lower().str.contains(owner, na=False)
+            ]
 
-    return jsonify(filtered_df.to_dict(orient='records'))
+        if product:
+            filtered_df = filtered_df[
+                filtered_df['PRODUCT_CODE'].str.lower().str.contains(product, na=False) |
+                filtered_df['MASTER_CODE'].str.lower().str.contains(product, na=False)
+            ]
+
+        print(f"Filtered rows: {len(filtered_df)}")  # DEBUG
+
+        return jsonify(filtered_df.to_dict(orient='records'))
+
+    except Exception as e:
+        print(f"❌ ERROR: {e}")  # Log error to Render console
+        return jsonify({"error": "Internal Server Error", "details": str(e)}), 500
 
 if __name__ == '__main__':
     # Get the port from the environment (Render sets this)
